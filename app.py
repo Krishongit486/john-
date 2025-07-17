@@ -4,7 +4,8 @@ from docx import Document
 import PyPDF2
 import openai
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Use new OpenAI v1+ client
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -32,38 +33,31 @@ def query_openai(policy_text, user_inputs):
     )
 
     prompt = f"""
-You are an insurance policy expert. Based on the following policy document and user input, determine:
+You are an insurance policy assistant. Based on the policy document and the user's details below, return a JSON object with:
+- decision: "approved" or "denied"
+- amount: (₹ or $ amount if applicable)
+- justification: A sentence explaining the decision
 
-1. decision: Is this procedure covered?
-2. amount: Estimated claim amount (if mentioned or inferred).
-3. justification: Why it is or is not covered.
+Respond only in valid JSON.
 
-Return response in valid JSON:
-
-{{
-  "decision": "...",
-  "amount": "...",
-  "justification": "..."
-}}
-
-Policy Document (truncated if too long):
+Policy (partial):
 {policy_text[:3000]}
 
-User Details:
+User:
 {user_description}
 """
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",  # or "gpt-3.5-turbo"
+        response = client.chat.completions.create(
+            model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a helpful insurance claim assistant."},
+                {"role": "system", "content": "You are a helpful insurance policy assistant."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=500
         )
-        return response.choices[0].message['content'].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         return f"OpenAI API error: {str(e)}"
 
@@ -87,7 +81,6 @@ def upload_file():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
     file.save(filepath)
 
-    # User inputs
     user_inputs = {
         "age": request.form.get("age"),
         "procedure": request.form.get("procedure"),
