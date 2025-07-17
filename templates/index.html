@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Insurance Helper Chatbot</title>
+</head>
+<body>
+  <h2>Upload Policy & Get AI Advice</h2>
+  <form action="/upload" method="post" enctype="multipart/form-data">
+    <label>Age: <input type="number" name="age" required></label><br><br>
+    <label>Procedure: <input type="text" name="procedure" required></label><br><br>
+    <label>Location: <input type="text" name="location" required></label><br><br>
+    <label>Policy Duration: <input type="text" name="duration" required placeholder="e.g. 2 years"></label><br><br>
+    <label>Upload Policy File: <input type="file" name="file" required accept=".txt,.pdf,.docx"></label><br><br>
+    <input type="submit" value="Get Advice">
+  </form>
+</body>
+</html>
