@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 import os
 import docx
@@ -8,7 +8,7 @@ import openai
 # --- CONFIG ---
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
-openai.api_key = "your-openai-api-key"
+openai.api_key = os.getenv("OPENAI_API_KEY")  # Or replace with your API key directly
 
 # --- APP SETUP ---
 app = Flask(__name__)
@@ -22,7 +22,7 @@ def allowed_file(filename):
 def extract_text(file_path):
     ext = file_path.rsplit('.', 1)[1].lower()
     if ext == 'txt':
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
     elif ext == 'docx':
         doc = docx.Document(file_path)
@@ -32,7 +32,9 @@ def extract_text(file_path):
         with open(file_path, 'rb') as f:
             reader = PyPDF2.PdfReader(f)
             for page in reader.pages:
-                text += page.extract_text()
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
         return text
     return ""
 
@@ -60,6 +62,7 @@ Return a JSON object containing:
   "justification": "..."
 }}
 """
+
     response = openai.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
@@ -68,6 +71,10 @@ Return a JSON object containing:
     return response.choices[0].message.content.strip()
 
 # --- ROUTES ---
+@app.route("/")
+def home():
+    return render_template("index.html")
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     if 'file' not in request.files or 'user_input' not in request.form:
@@ -83,14 +90,14 @@ def analyze():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    policy_text = extract_text(filepath)
-
     try:
+        policy_text = extract_text(filepath)
         response_json = ask_llm(policy_text, user_input)
-        return jsonify(eval(response_json))
+        return jsonify(eval(response_json))  # assumes model returns valid JSON
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # --- MAIN ---
 if __name__ == "__main__":
     app.run(debug=True)
+
