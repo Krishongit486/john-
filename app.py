@@ -1,106 +1,96 @@
+from flask import Flask, request, jsonify
+from werkzeug.utils import secure_filename
 import os
-from flask import Flask, request, jsonify, render_template
-from docx import Document
+import docx
 import PyPDF2
 import openai
 
-# Use new OpenAI v1+ client
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# --- CONFIG ---
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
+openai.api_key = "your-openai-api-key"
 
+# --- APP SETUP ---
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def extract_text(filepath):
-    ext = filepath.split('.')[-1].lower()
+# --- HELPERS ---
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def extract_text(file_path):
+    ext = file_path.rsplit('.', 1)[1].lower()
     if ext == 'txt':
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r') as f:
             return f.read()
     elif ext == 'docx':
-        doc = Document(filepath)
-        return "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+        doc = docx.Document(file_path)
+        return "\n".join([para.text for para in doc.paragraphs])
     elif ext == 'pdf':
-        with open(filepath, 'rb') as f:
+        text = ""
+        with open(file_path, 'rb') as f:
             reader = PyPDF2.PdfReader(f)
-            return "\n".join([page.extract_text() or "" for page in reader.pages])
-    else:
-        raise ValueError("Unsupported file type")
+            for page in reader.pages:
+                text += page.extract_text()
+        return text
+    return ""
 
-def query_openai(policy_text, user_inputs):
-    user_description = (
-        f"The user is {user_inputs['age']} years old, undergoing a procedure: '{user_inputs['procedure']}', "
-        f"in location: {user_inputs['location']}, with a policy duration of {user_inputs['duration']}."
-    )
-
+def ask_llm(policy_text, user_input):
     prompt = f"""
-You are an insurance policy assistant. Based on the policy document and the user's details below, return a JSON object with:
+You are an insurance advisor AI. You are given an insurance policy document and a user's request.
+
+Your job is to read the user's input and intelligently find the best matching section in the policy text that applies to the request.
+
+Return a JSON object containing:
 - decision: "approved" or "denied"
-- amount: (₹ or $ amount if applicable)
-- justification: A sentence explaining the decision
+- amount: the reimbursed or covered amount if applicable, or null
+- justification: a short explanation using relevant content from the policy
 
-Respond only in valid JSON.
+### POLICY TEXT ###
+{policy_text[:4000]}
 
-Policy (partial):
-{policy_text[:3000]}
+### USER INPUT ###
+{user_input}
 
-User:
-{user_description}
+### RESPONSE FORMAT ###
+{{
+  "decision": "...",
+  "amount": "...",
+  "justification": "..."
+}}
 """
+    response = openai.chat.completions.create(
+        model="gpt-3.5-turbo" 
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+    return response.choices[0].message.content.strip()
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful insurance policy assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            max_tokens=500
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"OpenAI API error: {str(e)}"
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({"error": "No policy document uploaded"}), 400
+# --- ROUTES ---
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    if 'file' not in request.files or 'user_input' not in request.form:
+        return jsonify({"error": "Missing file or user input"}), 400
 
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "Empty filename"}), 400
+    user_input = request.form['user_input']
 
-    ext = file.filename.rsplit('.', 1)[-1].lower()
-    if ext not in ['txt', 'pdf', 'docx']:
+    if not allowed_file(file.filename):
         return jsonify({"error": "Unsupported file type"}), 400
 
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    user_inputs = {
-        "age": request.form.get("age"),
-        "procedure": request.form.get("procedure"),
-        "location": request.form.get("location"),
-        "duration": request.form.get("duration")
-    }
-
-    if not all(user_inputs.values()):
-        return jsonify({"error": "Please fill in all fields."}), 400
+    policy_text = extract_text(filepath)
 
     try:
-        policy_text = extract_text(filepath)
-        summary = query_openai(policy_text, user_inputs)
-        return jsonify({
-            "filename": file.filename,
-            "user_inputs": user_inputs,
-            "summary": summary
-        })
+        response_json = ask_llm(policy_text, user_input)
+        return jsonify(eval(response_json))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
+# --- MAIN ---
+if __name__ == "__main__":
     app.run(debug=True)
