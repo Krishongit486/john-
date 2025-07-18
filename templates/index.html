@@ -1,17 +1,99 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Insurance Helper Chatbot</title>
+  <meta charset="UTF-8">
+  <title>Insurance Policy Analyzer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+      background: #f8f9fa;
+    }
+    h2 {
+      color: #333;
+    }
+    label {
+      display: block;
+      margin-top: 20px;
+      font-weight: bold;
+    }
+    input, textarea, button {
+      margin-top: 10px;
+      padding: 10px;
+      width: 100%;
+      max-width: 600px;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #response {
+      margin-top: 30px;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
+    }
+    .loading {
+      color: #888;
+      font-style: italic;
+    }
+  </style>
 </head>
 <body>
-  <h2>Upload Policy & Get AI Advice</h2>
-  <form action="/upload" method="post" enctype="multipart/form-data">
-    <label>Age: <input type="number" name="age" required></label><br><br>
-    <label>Procedure: <input type="text" name="procedure" required></label><br><br>
-    <label>Location: <input type="text" name="location" required></label><br><br>
-    <label>Policy Duration: <input type="text" name="duration" required placeholder="e.g. 2 years"></label><br><br>
-    <label>Upload Policy File: <input type="file" name="file" required accept=".txt,.pdf,.docx"></label><br><br>
-    <input type="submit" value="Get Advice">
+
+  <h2>Insurance Policy Analyzer</h2>
+
+  <form id="analyze-form" enctype="multipart/form-data">
+    <label for="file">Upload Policy Document:</label>
+    <input type="file" id="file" name="file" required accept=".pdf,.txt,.docx">
+
+    <label for="user_input">Describe the situation:</label>
+    <textarea id="user_input" name="user_input" rows="5" placeholder="Example: 62-year-old male, bypass surgery, Maharashtra, 1-year policy" required></textarea>
+
+    <button type="submit">Analyze</button>
   </form>
+
+  <div id="response"></div>
+
+  <script>
+    document.getElementById("analyze-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const form = document.getElementById("analyze-form");
+      const formData = new FormData(form);
+      const responseDiv = document.getElementById("response");
+
+      responseDiv.innerHTML = '<p class="loading">Analyzing policy, please wait...</p>';
+
+      try {
+        const res = await fetch("/analyze", {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+          responseDiv.innerHTML = `<p style="color:red;">Error: ${data.error}</p>`;
+        } else {
+          responseDiv.innerHTML = `
+            <h3>Decision: ${data.decision.toUpperCase()}</h3>
+            <p><strong>Amount:</strong> ${data.amount || 'Not specified'}</p>
+            <p><strong>Justification:</strong> ${data.justification}</p>
+          `;
+        }
+
+      } catch (err) {
+        responseDiv.innerHTML = `<p style="color:red;">Request failed: ${err.message}</p>`;
+      }
+    });
+  </script>
+
 </body>
 </html>
